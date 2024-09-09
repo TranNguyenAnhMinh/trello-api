@@ -2,12 +2,15 @@ import Joi from 'joi'
 import { ObjectId } from 'mongodb'
 import { OBJECT_ID_RULE, OBJECT_ID_RULE_MESSAGE } from '~/utils/validators'
 import { GET_DB } from '~/config/mongodb'
-
+import { BOARD_TYPE } from '~/utils/constants'
+import { columnModel } from './columnModel'
+import { cardModel } from './cardModel'
 const BOARD_COLLECTION_NAME = 'board'
 const BOARD_COLLECTION_SCHEMA = Joi.object({
   title: Joi.string().required().min(3).max(50).trim().strict(),
   slug: Joi.string().required().min(3).trim().strict(),
   description: Joi.string().required().min(3).max(256).trim().strict(),
+  type: Joi.string().valid(BOARD_TYPE.PUBLIC, BOARD_TYPE.PRIVATE).required(),
   // khác cái regex
   columnOrderIds: Joi.array().items(
     Joi.string().pattern(OBJECT_ID_RULE).message(OBJECT_ID_RULE_MESSAGE)
@@ -39,16 +42,34 @@ const findOneById = async (id) => {
     throw new Error(error)
   }
 }
+// Query tổng hợp (aggregate) để lấy tonaf bộ column
 const getDetails = async (id) => {
   try {
-    const result = await GET_DB().collection(BOARD_COLLECTION_NAME).findOne({
-      // ép kiểu thành obj id để không bị lỗi
-      _id: new ObjectId(id)
-    })
-    return result
+    //const result = await GET_DB().collection(BOARD_COLLECTION_NAME).findOne({
+    const result = await GET_DB().collection(BOARD_COLLECTION_NAME).aggregate([
+      { $match: {
+        _id: new ObjectId(id),
+        _destroy: false
+      } },
+      { $lookup:{
+        from:  columnModel.COLUMN_COLLECTION_NAME,
+        localField:'_id',
+        foreignField:'boardId',
+        as:'columns'
+      } },
+      { $lookup:{
+        from:  cardModel.CARD_COLLECTION_NAME,
+        localField:'_id',
+        foreignField:'boardId',
+        as:'cards'
+      } }
+    ]).toArray()
+    // ép kiểu thành obj id để không bị lỗi
+    //_id: new ObjectId(id)
+    return result[0] || {}
   } catch (error) {
-    throw new Error(error)
-  }
+  throw new Error(error)
+}
 }
 export const boardModel = {
   BOARD_COLLECTION_NAME,
@@ -57,3 +78,7 @@ export const boardModel = {
   findOneById,
   getDetails
 }
+
+//boardID: 66deddb9577a38dc78466ca3
+//66dee4178c64565bc917145a
+//cardIds: 66dee52a8c64565bc917145d
